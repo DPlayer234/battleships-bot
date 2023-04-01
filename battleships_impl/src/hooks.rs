@@ -92,46 +92,40 @@ async fn handle_interaction_game_action(ctx: &Context, interaction: &ModalSubmit
     match action.kind {
         GameActionKind::Fire => {
 			// Grab the first component. It should be the only one, so we do no more checks.
-			if let Some(component) = interaction.data.components.iter().flat_map(|v| v.components.iter()).next() {
-				if let ActionRowComponent::InputText(component) = component {
-					// Remove the button; if needed, we'll add another
-					interaction.create_interaction_response(ctx, |r| r
-						.interaction_response_data(|d| RemoveButtonsRender.render_interaction(d))
-						.kind(InteractionResponseType::UpdateMessage)
-					).await?;
+			let component = interaction.data.components.iter().flat_map(|v| v.components.iter()).next();
+			let Some(ActionRowComponent::InputText(component)) = component else { return Ok(()); };
+			
+			// Remove the button; if needed, we'll add another
+			interaction.create_interaction_response(ctx, |r| r
+				.interaction_response_data(|d| RemoveButtonsRender.render_interaction(d))
+				.kind(InteractionResponseType::UpdateMessage)
+			).await?;
 
-					if let Some(Coord(coord)) = Coord::from_str(&component.value) {
-						let target = action.state.target_mut();
-						if target.hits.get(coord) {
-							// If the coordinate is already hit, tell the user that and let them take another turn
-							respond_invalid_fire(ctx, interaction, action, InvalidFireReason::AlreadyHit).await?;
-						} else {
-							// Mark the coordinate as hit
-							target.hits.set(coord);
+			let Some(Coord(coord)) = Coord::from_str(&component.value) else {
+				// Invalid coordinate, report to user and let them take another turn
+				return respond_invalid_fire(ctx, interaction, action, InvalidFireReason::InvalidCoord).await;
+			};
 
-							// Grab the info for the next turn.
-							let next_turn_info =
-								if let Some(ship) = target.overlap(coord) {
-									if target.is_sunk(&ship) {
-										NextTurnInfo::Sunk(ship.info.label)
-									} else {
-										NextTurnInfo::Hit
-									}
-								} else {
-									NextTurnInfo::Miss
-								};
+			let target = action.state.target_mut();
+			if target.hits.get(coord) {
+				// If the coordinate is already hit, tell the user that and let them take another turn
+				respond_invalid_fire(ctx, interaction, action, InvalidFireReason::AlreadyHit).await?;
+			} else {
+				// Mark the coordinate as hit
+				target.hits.set(coord);
 
-							// Swap turns, and send a message
-							action.state.swap_turn();
+				// Grab the info for the next turn.
+				let next_turn_info = match target.overlap(coord) {
+					Some(ref s) if target.is_sunk(s) => NextTurnInfo::Sunk(s.info.label),
+					Some(_) => NextTurnInfo::Hit,
+					None => NextTurnInfo::Miss
+				};
+					
+				// Swap turns, and send a message
+				action.state.swap_turn();
 
-							let state = NextTurnRender(action.state, component.value.clone(), next_turn_info);
-							interaction.channel_id.send_message(ctx, |m| state.render_message(m)).await?;
-						}
-					} else {
-						// Invalid coordinate, report to user and let them take another turn
-						respond_invalid_fire(ctx, interaction, action, InvalidFireReason::InvalidCoord).await?;
-					}
-				}
+				let state = NextTurnRender(action.state, component.value.clone(), next_turn_info);
+				interaction.channel_id.send_message(ctx, |m| state.render_message(m)).await?;
 			}
 
 			Ok(())
