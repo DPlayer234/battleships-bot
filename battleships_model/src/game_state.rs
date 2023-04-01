@@ -175,7 +175,7 @@ impl PlayerState {
 		self.ships().iter().find(|&s| {
 			let (l, r) = s.bounds();
 			pos.x >= l.x && pos.y >= l.y &&
-			pos.x <= r.x && pos.y <= r.x
+			pos.x <= r.x && pos.y <= r.y
 		}).cloned()
 	}
 
