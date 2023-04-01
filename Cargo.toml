@@ -1,0 +1,10 @@
+[workspace]
+members = [
+    "battleships_app",
+    "battleships_impl",
+    "battleships_model"
+]
+
+[profile.release]
+lto = true
+panic = 'abort'
