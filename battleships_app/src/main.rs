@@ -39,7 +39,7 @@ impl EventHandler for Handler {
 		let user_id = UserId(self.user_id.load(Ordering::Relaxed));
 		if !new_message.mentions_user_id(user_id) { return; }
 		if let Some(other_player) = to_scalar(new_message.mentions.iter().filter(|&u| u.id != user_id)) {
-			generic_handler(hooks::start_game(&ctx, new_message.channel_id, new_message.author.id, other_player.id).await);
+			generic_handler(hooks::start_game(&ctx, new_message.channel_id, &new_message.author, other_player).await);
 		}
 	}
 

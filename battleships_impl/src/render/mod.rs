@@ -9,7 +9,7 @@ mod wrong;
 pub(crate) mod utility;
 
 // Selectively re-export the sub-modules
-pub use start::StartRender;
+pub use start::{StartRender, FailStartRender, FailStartReason};
 pub use place::{NextPlaceRender, PlaceRender};
 pub use next_turns::{FirstTurnRender, NextTurnRender, NextTurnInfo};
 pub use fire::{FireRender, ChooseFireRender, InvalidFireRender, InvalidFireReason};

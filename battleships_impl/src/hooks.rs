@@ -14,33 +14,40 @@ use crate::render::*;
 pub async fn handle_component_interaction(ctx: &Context, interaction: &MessageComponentInteraction) -> SerenityResult {
 	match GameAction::from_id(&interaction.data.custom_id) {
 		Ok(action) => {
-			handle_component_game_action(ctx, interaction, action).await?;
+			handle_component_game_action(ctx, interaction, action).await
 		}
 		Err(err) => {
 			dbg!(err);
+			Ok(())
 		}
-	};
-
-	Ok(())
+	}
 }
 
 pub async fn handle_modal_interaction(ctx: &Context, interaction: &ModalSubmitInteraction) -> SerenityResult {
 	match GameAction::from_id(&interaction.data.custom_id) {
 		Ok(action) => {
-			handle_interaction_game_action(ctx, interaction, action).await?;
+			handle_interaction_game_action(ctx, interaction, action).await
 		}
 		Err(err) => {
 			dbg!(err);
+			Ok(())
 		}
-	};
-
-	Ok(())
+	}
 }
 
-pub async fn start_game(ctx: &Context, channel_id: ChannelId, player_1_id: UserId, player_2_id: UserId) -> SerenityResult {
-	let state = GameState::new(player_1_id.0, player_2_id.0);
-	let state = StartRender(state);
-	channel_id.send_message(ctx, |m| state.render_message(m)).await?;
+pub async fn start_game(ctx: &Context, channel_id: ChannelId, player_1: &User, player_2: &User) -> SerenityResult {
+	match check_players(player_1, player_2) {
+		Ok(_) => {
+			let state = GameState::new(player_1.id.0, player_2.id.0);
+			let state = StartRender(state);
+			channel_id.send_message(ctx, |m| state.render_message(m)).await?;
+		}
+		Err(reason) => {
+			let state = FailStartRender(reason);
+			channel_id.send_message(ctx, |m| state.render_message(m)).await?;
+		}
+	}
+
 	Ok(())
 }
 
@@ -168,4 +175,20 @@ async fn respond_invalid_fire(ctx: &Context, interaction: &ModalSubmitInteractio
     let state = InvalidFireRender(action.state, reason);
     interaction.create_followup_message(ctx, |f| state.render_follow_up(f)).await?;
 	Ok(())
+}
+
+fn check_players(player_1: &User, player_2: &User) -> std::result::Result<(), FailStartReason> {
+	if player_1.id == player_2.id {
+		Err(FailStartReason::Same)
+	} else {
+		check_player(player_1).and_then(|_| check_player(player_2))
+	}
+}
+
+fn check_player(user: &User) -> std::result::Result<(), FailStartReason> {
+	if user.bot {
+		Err(FailStartReason::Bot(user.id))
+	} else {
+		Ok(())
+	}
 }
