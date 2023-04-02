@@ -3,10 +3,11 @@ use serenity::model::prelude::*;
 use serenity::utils::*;
 use battleships_model::game_state::*;
 
-use crate::consts::EMBED_COLOR;
+use crate::consts::{EMBED_COLOR, RETRY_COLOR};
 use crate::action::{GameActionKind, Coord};
 
 use super::FollowUpRender;
+use super::utility::render_target::*;
 use super::utility::renders::SharedPrepareRender;
 
 #[derive(Clone)]
@@ -61,14 +62,7 @@ impl FollowUpRender for NextTurnRender {
 			.push('\n');
 
 		if matches!(self.info, NextTurnInfo::Sunk { loss: true, .. }) {
-			let (loser, winner) = self.state.turns();
-
-			desc.push_bold('[')
-				.mention(&UserId(loser.user_id))
-				.push(" lost all their ships! ")
-				.mention(&UserId(winner.user_id))
-				.push(" wins!")
-				.push_bold(']');
+			self.render_end_of_game(&mut desc, msg);
 		} else {
 			desc.push_bold('[')
 				.mention(&UserId(self.state.current().user_id))
@@ -85,4 +79,37 @@ impl FollowUpRender for NextTurnRender {
 			.description(desc)
 			.color(EMBED_COLOR))
 	}
+}
+
+impl NextTurnRender {
+    fn render_end_of_game(&self, desc: &mut MessageBuilder, msg: &mut CreateInteractionResponseFollowup) {
+        let (loser, winner) = self.state.turns();
+
+        desc.push_bold('[')
+			.mention(&UserId(loser.user_id))
+			.push(" lost all their ships! ")
+			.mention(&UserId(winner.user_id))
+			.push(" wins!")
+			.push_bold(']');
+
+        let mut buffer = RenderTarget::new();
+        buffer.set_all_fields(loser);
+
+        msg.embed(|e| e
+			.description(
+				buffer.render_grid(
+					&format!("**[Loser]** {}", UserId(loser.user_id).mention()),
+					&Emotes::OWN))
+			.color(RETRY_COLOR));
+
+        buffer = RenderTarget::new();
+        buffer.set_all_fields(winner);
+
+        msg.embed(|e| e
+			.description(
+				buffer.render_grid(
+					&format!("**[Winner]** {}", UserId(winner.user_id).mention()),
+					&Emotes::OWN))
+			.color(EMBED_COLOR));
+    }
 }
