@@ -60,8 +60,8 @@ fn to_scalar<T>(mut iter: impl Iterator<Item = T>) -> Option<T> {
 }
 
 fn generic_handler<T, E: Error + Debug>(result: Result<T, E>) {
-	if let Err(e) = result {
-		dbg!(e);
+	if let Err(err) = result {
+		dbg!(err);
 	}
 }
 

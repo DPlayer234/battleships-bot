@@ -51,7 +51,7 @@ pub struct Vec2 {
 pub struct Rotation(u8);
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub struct Turn(pub u8);
+pub struct Turn(u8);
 
 impl Vec2 {
 	pub const fn new(x: u8, y: u8) -> Self {
@@ -68,10 +68,18 @@ impl GameState {
 		}
 	}
 
-	pub fn current_turn(&self) -> &PlayerState {
+	pub fn current(&self) -> &PlayerState {
 		match self.turn.0 {
 			1 => &self.player_1,
 			2 => &self.player_2,
+			_ => panic!("invalid turn state")
+		}
+	}
+
+	pub fn current_mut(&mut self) -> &mut PlayerState {
+		match self.turn.0 {
+			1 => &mut self.player_1,
+			2 => &mut self.player_2,
 			_ => panic!("invalid turn state")
 		}
 	}
@@ -109,6 +117,10 @@ impl GameState {
 			_ => panic!("invalid turn state")
 		};
 	}
+
+	pub fn turn_num(&self) -> u8 {
+		self.turn.num()
+	}
 }
 
 // This is just cursed.
@@ -134,31 +146,15 @@ fn has_overlaps(ships: &[ShipState; ShipInfo::COUNT], index: usize) -> bool {
 
 impl PlayerState {
 	pub fn new(user_id: u64) -> Self {
-		let mut rng = thread_rng();
-		let mut ships = [ShipState(0); ShipInfo::COUNT];
-
-		for i in 0..ShipInfo::COUNT {
-			let info = ShipInfo::ALL[i];
-			loop {
-				let short = rng.sample(Uniform::new(0, GRID_SIZE - info.len));
-				let full = rng.sample(Uniform::new(0, GRID_SIZE));
-				let state =
-					if rng.sample(Standard) {
-						ShipState::new(Vec2::new(short, full), Rotation::HORI)
-					} else {
-						ShipState::new(Vec2::new(full, short), Rotation::VERT)
-					};
-
-				ships[i] = state;
-				if !has_overlaps(&ships, i) { break; }
-			}
-		}
-
 		Self {
 			user_id,
-			ships,
-			hits: Default::default()
+			ships: Self::new_random_ships(),
+			hits: HitMatrix::new()
 		}
+	}
+
+	pub fn randomize_ships(&mut self) {
+		self.ships = Self::new_random_ships();
 	}
 
 	pub fn ships(&self) -> [Ship; ShipInfo::COUNT] {
@@ -189,10 +185,31 @@ impl PlayerState {
 
 		res
 	}
+
+	pub fn are_all_ships_sunk(&self) -> bool {
+		self.ships().iter().all(|s| self.is_sunk(s))
+	}
+
+	fn new_random_ships() -> [ShipState; ShipInfo::COUNT] {
+		let mut rng = thread_rng();
+		let mut ships = [ShipState(0); ShipInfo::COUNT];
+
+		for i in 0..ShipInfo::COUNT {
+			let info = ShipInfo::ALL[i];
+			loop {
+				ships[i] = ShipState::random(&mut rng, info);
+				if !has_overlaps(&ships, i) { break; }
+			}
+		}
+
+		ships
+	}
 }
 
 impl HitMatrix {
-	pub fn new() -> Self {
+	pub const ALL: Self = Self(u128::MAX);
+
+	pub const fn new() -> Self {
 		HitMatrix(0)
 	}
 
@@ -259,6 +276,16 @@ impl ShipState {
 		}
 	}
 
+	pub fn random(rng: &mut impl Rng, info: &ShipInfo) -> Self {
+		let short = rng.sample(Uniform::new(0, GRID_SIZE - info.len));
+		let full = rng.sample(Uniform::new(0, GRID_SIZE));
+		if rng.sample(Standard) {
+			ShipState::new(Vec2::new(short, full), Rotation::HORI)
+		} else {
+			ShipState::new(Vec2::new(full, short), Rotation::VERT)
+		}
+	}
+
 	pub fn position(self) -> Vec2 {
 		const LEN: u8 = GRID_SIZE - 1;
 		let val = self.0 & 0b0111_1111;
@@ -304,6 +331,20 @@ impl ShipInfo {
 
 	const fn new(label: &'static str, index: usize, len: u8) -> Self {
 		Self { label, index, len }
+	}
+}
+
+impl Turn {
+	pub fn new(num: u8) -> Option<Turn> {
+		if num == 0 || num == 1 {
+			Some(Turn(num))
+		} else {
+			None
+		}
+	}
+
+	pub fn num(self) -> u8 {
+		self.0
 	}
 }
 

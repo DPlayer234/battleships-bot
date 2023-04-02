@@ -1,4 +1,4 @@
 pub mod hooks;
 pub mod render;
-mod action;
+pub mod action;
 mod consts;

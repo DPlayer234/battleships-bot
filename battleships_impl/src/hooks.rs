@@ -44,48 +44,68 @@ pub async fn start_game(ctx: &Context, channel_id: ChannelId, player_1_id: UserI
 	Ok(())
 }
 
-async fn handle_component_game_action(ctx: &Context, interaction: &MessageComponentInteraction, action: GameAction) -> SerenityResult {
+async fn handle_component_game_action(ctx: &Context, interaction: &MessageComponentInteraction, mut action: GameAction) -> SerenityResult {
+	if action.state.current().user_id != interaction.user.id.0 {
+		return if action.state.target().user_id == interaction.user.id.0 {
+			// The enemy has clicked
+			render_interaction_response(ctx, interaction, InteractionResponseType::ChannelMessageWithSource, NotYourTurnRender).await
+		} else {
+			// Some other random user has clicked
+			render_interaction_response(ctx, interaction, InteractionResponseType::ChannelMessageWithSource, NotInvolvedRender).await
+		};
+	}
+
 	match action.kind {
 		GameActionKind::StartTurn => {
-			let (curr_turn, other_turn) = action.state.turns();
-
-			if curr_turn.user_id == interaction.user.id.0 {
-				// Remove the button.
-				interaction.create_interaction_response(ctx, |r| r
-					.interaction_response_data(|d| RemoveButtonsRender.render_interaction(d))
-					.kind(InteractionResponseType::UpdateMessage)
-				).await?;
-
-				// Send the fire info.
-				let state = FireRender(action.state);
-				interaction.create_followup_message(ctx, |f| state.render_follow_up(f)).await?;
-			} else if other_turn.user_id == interaction.user.id.0 {
-				// The enemy has clicked
-				interaction.create_interaction_response(ctx, |r| r
-					.interaction_response_data(|d| NotYourTurnRender.render_interaction(d))
-					.kind(InteractionResponseType::ChannelMessageWithSource)
-				).await?;
-			} else {
-				// Some other random user has clicked
-				interaction.create_interaction_response(ctx, |r| r
-					.interaction_response_data(|d| NotInvolvedRender.render_interaction(d))
-					.kind(InteractionResponseType::ChannelMessageWithSource)
-				).await?;
-			}
-
-			Ok(())
+			render_follow_up_and_delete_buttons(ctx, interaction, FireRender(action.state)).await
 		}
 		GameActionKind::Fire => {
-			// Let's not bother checking the user since the button is on an ephemeral message
-			let state = FireModalRender(action.state);
-			interaction.create_interaction_response(ctx, |f| f
-				.interaction_response_data(|d| state.render_interaction(d))
-				.kind(InteractionResponseType::Modal)
-			).await?;
+			render_interaction_response(ctx, interaction, InteractionResponseType::Modal, ChooseFireRender(action.state)).await
+		}
+		GameActionKind::Place => {
+			render_follow_up_and_delete_buttons(ctx, interaction, PlaceRender(action.state)).await
+		}
+		GameActionKind::RandomizePlace => {
+			action.state.current_mut().randomize_ships();
+			render_interaction_response(ctx, interaction, InteractionResponseType::UpdateMessage, PlaceRender(action.state)).await
+		}
+		GameActionKind::ConfirmPlace => {
+			if action.state.turn_num() == 1 {
+				// If Player 1 chose, we also ask Player 2 to prepare
+				action.state.swap_turn();
+				render_follow_up_and_delete_buttons(ctx, interaction, NextPlaceRender(action.state)).await
+			} else {
+				// If Player 2 confirms, that means both players are ready
+				action.state.swap_turn();
+				render_follow_up_and_delete_buttons(ctx, interaction, FirstTurnRender(action.state)).await
+			}
+		}
 
+		#[allow(unreachable_patterns)]
+		_ => {
+			dbg!(action);
 			Ok(())
 		}
 	}
+}
+
+async fn render_interaction_response(ctx: &Context, interaction: &MessageComponentInteraction, kind: InteractionResponseType, state: impl InteractionRender) -> SerenityResult {
+	interaction.create_interaction_response(ctx, |f| f
+		.interaction_response_data(|d| state.render_interaction(d))
+		.kind(kind)
+	).await
+}
+
+async fn render_follow_up_and_delete_buttons(ctx: &Context, interaction: &MessageComponentInteraction, state: impl FollowUpRender) -> SerenityResult {
+	// Remove the button.
+	interaction.create_interaction_response(ctx, |r| r
+		.interaction_response_data(|d| RemoveButtonsRender.render_interaction(d))
+		.kind(InteractionResponseType::UpdateMessage)
+	).await?;
+
+	// Send the follow up
+	interaction.create_followup_message(ctx, |f| state.render_follow_up(f)).await?;
+	Ok(())
 }
 
 async fn handle_interaction_game_action(ctx: &Context, interaction: &ModalSubmitInteraction, mut action: GameAction) -> SerenityResult {
@@ -116,21 +136,28 @@ async fn handle_interaction_game_action(ctx: &Context, interaction: &ModalSubmit
 
 				// Grab the info for the next turn.
 				let next_turn_info = match target.overlap(coord) {
-					Some(ref s) if target.is_sunk(s) => NextTurnInfo::Sunk(s.info.label),
+					Some(ref s) if target.is_sunk(s) => NextTurnInfo::Sunk { kind: s.info.label, loss: target.are_all_ships_sunk() },
 					Some(_) => NextTurnInfo::Hit,
 					None => NextTurnInfo::Miss
 				};
-					
+
 				// Swap turns, and send a message
 				action.state.swap_turn();
 
-				let state = NextTurnRender(action.state, component.value.clone(), next_turn_info);
-				interaction.channel_id.send_message(ctx, |m| state.render_message(m)).await?;
+				let state = NextTurnRender {
+					state: action.state,
+					tile: Coord(coord),
+					info: next_turn_info
+				};
+
+				interaction.create_followup_message(ctx, |m| state.render_follow_up(m)).await?;
 			}
 
 			Ok(())
 		}
-        GameActionKind::StartTurn => {
+		
+		#[allow(unreachable_patterns)]
+        _ => {
 			dbg!(action);
 			Ok(())
 		}

@@ -14,7 +14,10 @@ pub struct GameAction {
 #[derive(Debug, Copy, Clone)]
 pub enum GameActionKind {
 	StartTurn,
-	Fire
+	Fire,
+	Place,
+	RandomizePlace,
+	ConfirmPlace
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -53,7 +56,7 @@ impl GameAction {
 		let kind = GameActionKind::from_char(kind)?;
 		let state = parse_game_state(&id[1..])?;
 
-		Ok(GameAction { kind, state })
+		Ok(GameAction::new(kind, state))
 	}
 }
 
@@ -61,7 +64,10 @@ impl GameActionKind {
 	pub fn to_char(self) -> char {
 		match self {
 			GameActionKind::StartTurn => 'T',
-			GameActionKind::Fire => 'F'
+			GameActionKind::Fire => 'F',
+			GameActionKind::Place => 'P',
+			GameActionKind::RandomizePlace => 'p',
+			GameActionKind::ConfirmPlace => 'C'
 		}
 	}
 
@@ -69,6 +75,9 @@ impl GameActionKind {
 		match c {
 			'T' => Ok(GameActionKind::StartTurn),
 			'F' => Ok(GameActionKind::Fire),
+			'P' => Ok(GameActionKind::Place),
+			'p' => Ok(GameActionKind::RandomizePlace),
+			'C' => Ok(GameActionKind::ConfirmPlace),
 			_ => Err(GameActionParseError::UnknownAction)
 		}
 	}
@@ -85,13 +94,22 @@ impl Coord {
 		None
 	}
 
+	pub fn to_string(self) -> String {
+		const UP_A: u32 = 'A' as u32;
+
+		let mut res = String::new();
+		res.push(char::from_u32(UP_A + u32::from(self.0.x)).unwrap_or('?'));
+		res.push_str(&(self.0.y + 1).to_string());
+		res
+	}
+
 	fn from_pair(column: char, row: &str) -> Option<Coord> {
 		// J = Column 10
 		const UP_A: u32 = 'A' as u32;
 		const UP_J: u32 = 'J' as u32;
 
 		const LOW_A: u32 = 'a' as u32;
-		const LOW_J: u32 = 'J' as u32;
+		const LOW_J: u32 = 'j' as u32;
 
 		let column: u32 = column.into();
 		let column =
